@@ -28,7 +28,7 @@ class FourierWeights:
         KX, KY = np.meshgrid(kx, ky)
         self.k_radial = np.sqrt(KX**2 + KY**2)
 
-        self.k_radial = np.where(self.k_radial == 0, self.eps, self.k_radial)
+        self.k_radial[self.k_radial == 0] = self.eps
 
     def _precompute_disk(self):
         # Compute the Fourier transform of the disk indicator function
@@ -44,14 +44,14 @@ class FourierWeights:
         # Multiply Fourier transform of f(x, y) by the Fourier transform of the disk
         M_fft = f_fft * self.disk_fft
         # Compute the inverse Fourier transform to get M(x, y) in real space
-        M = np.fft.ifft2(np.fft.ifftshift(M_fft)).real
+        M = ifft2(M_fft).real
         return M
     
     def compute_N(self, f_fft):
         # Multiply Fourier transform of f(x, y) by the Fourier transform of the annulus
         N_fft = f_fft * self.annulus_fft
         # Compute the inverse Fourier transform to get N(x, y) in real space
-        N = np.fft.ifft2(np.fft.ifftshift(N_fft)).real
+        N = ifft2(N_fft).real
         return N
     
 
