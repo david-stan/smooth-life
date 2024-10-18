@@ -23,8 +23,8 @@ class FourierWeights:
 
     def _precompute_frequencies(self):
         # Compute frequencies in Fourier space (kx, ky)
-        kx = np.fft.fftfreq(self.res)
-        ky = np.fft.fftfreq(self.res)
+        kx = np.fft.fftfreq(self.res, d=1.0)
+        ky = np.fft.fftfreq(self.res, d=1.0)
         KX, KY = np.meshgrid(kx, ky)
         self.k_radial = np.sqrt(KX**2 + KY**2)
 
@@ -53,7 +53,16 @@ class FourierWeights:
         # Compute the inverse Fourier transform to get N(x, y) in real space
         N = ifft2(N_fft).real
         return N
-    
+
+    def apply_gaussian_filter(field_fft, cutoff=0.66):
+        kx = np.fft.fftfreq(self.res, d=1.0)
+        ky = np.fft.fftfreq(self.res, d=1.0)
+        KX, KY = np.meshgrid(kx, ky)
+        omega = np.sqrt(KX**2 + KY**2)
+        
+        # Gaussian low-pass filter in the Fourier domain
+        gaussian_filter = np.exp(-(omega**2) / (2 * cutoff**2))
+        return field_fft * gaussian_filter
 
 class Rules:
     # Birth span
