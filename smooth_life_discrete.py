@@ -33,11 +33,11 @@ class FourierWeights:
     def _precompute_disk(self):
         # Compute the Fourier transform of the disk indicator function
         # using the bessel functions of the first order
-        self.disk_fft = (2 * j1(2 * np.pi * self.h * self.k_radial)) / self.k_radial
+        self.disk_fft = (np.sqrt(3 * self.h) / (4 * self.k_radial)) * j1(2 * np.pi * self.h * self.k_radial)
 
     def _precompute_annulus(self):
         # Compute the Fourier transform for the annulus (difference between disks)
-        disk_3h_fft = (2 * j1(2 * np.pi * 3 * self.h * self.k_radial)) / self.k_radial
+        disk_3h_fft = (np.sqrt(9 * self.h) / (4 * self.k_radial)) * j1(6 * np.pi * self.h * self.k_radial)
         self.annulus_fft = disk_3h_fft - self.disk_fft
 
     def compute_M(self, f_fft):
