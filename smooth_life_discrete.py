@@ -3,9 +3,10 @@ import numpy as np
 from scipy.special import j1
 from scipy.fft import fft2, ifft2
 from matplotlib import pyplot as plt
+from matplotlib import animation
 
 class FourierWeights:
-    def __init__(self, res, h=3, eps=1e-10):
+    def __init__(self, res, h=7, eps=1e-10):
         self.res = res              # Grid resolution
         self.h = h                  # Radius
         self.eps = eps
@@ -85,7 +86,7 @@ class Rules:
         """
         return self.logistic_threshold(x, a, alpha) * (1.0 - self.logistic_threshold(x, b, alpha))
     
-    def lerp(a, b, t):
+    def lerp(self, a, b, t):
         """Linear intererpolate from a to b with t ranging [0,1]
 
         """
@@ -102,8 +103,8 @@ class Rules:
         # A fully dead cell will become alive if the neighbor density is between B1 and B2.
         # A fully alive cell will stay alive if the neighhbor density is between D1 and D2.
         # Interpolate between the two sets of thresholds depending on how alive/dead the cell is.
-        threshold1 = self.lerp(self.B1, self.D1, aliveness)
-        threshold2 = self.lerp(self.B2, self.D2, aliveness)
+        threshold1 = self.lerp(self.B0, self.D0, aliveness)
+        threshold2 = self.lerp(self.B1, self.D1, aliveness)
         # Now with the smoothness of `logistic_interval` determine if the neighbor density is
         # inside of the threshold to stay/become alive.
         new_aliveness = self.logistic_interval(N, threshold1, threshold2, self.alpha_N)
@@ -113,13 +114,53 @@ class Rules:
 
 class SmoothLife:
     def __init__(self):
-        self.weights = FourierWeights()
+        self.weights = FourierWeights(1 << 8)
         self.rules = Rules()
 
+        self.field = np.zeros((self.weights.res, self.weights.res))
+        self.initialize_field(self.weights.res, self.weights.h)
+        self.field_fft = np.fft.fft2(self.field)
 
+    def initialize_field(self, res, h):
+        """Populate field with random living squares
+
+        If count unspecified, do a moderately dense fill
+        """
+        count = int(res**2 / ((h * 3 * 2) ** 2))
+        for _ in range(count):
+            radius = int(3 * h)
+            r = np.random.randint(0, res - radius)
+            c = np.random.randint(0, res - radius)
+            self.field[r : r + radius, c : c + radius] = 1
+        
+    def step(self):
+        M_buffer_ = self.field_fft * self.weights.disk_fft
+        N_buffer_ = self.field_fft * self.weights.annulus_fft
+        M_buffer = np.real(np.fft.ifft2(M_buffer_))
+        N_buffer = np.real(np.fft.ifft2(N_buffer_))
+        self.field = self.rules.S(M_buffer, N_buffer)
+        return self.field
+
+
+def show_animation():
+    sl = SmoothLife()
+    sl.step()
+
+    fig = plt.figure()
+    # Nice color maps: viridis, plasma, gray, binary, seismic, gnuplot
+    im = plt.imshow(
+        sl.field, animated=True, cmap=plt.get_cmap("viridis"), aspect="equal"
+    )
+
+    def animate(*args):
+        im.set_array(sl.step())
+        return (im,)
+
+    ani = animation.FuncAnimation(fig, animate, interval=60, blit=True)
+    plt.show()
 
 def main():
-    pass
+    show_animation()
 
 if __name__ == "__main__":
     main()
