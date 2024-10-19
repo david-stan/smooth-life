@@ -5,9 +5,10 @@ from matplotlib import pyplot as plt
 from matplotlib import animation
 
 class FourierWeights:
-    def __init__(self, res, h=7, eps=1e-10):
-        self.res = res              # Grid resolution
-        self.h = h                  # Radius
+    def __init__(self, resolution, radius=4.4, eps=1e-10):
+        self.res = resolution                  # Grid resolution
+        self.inner_rad = radius                # Inner radius
+        self.outer_rad = radius * 3            # Outer radius
         self.eps = eps
 
         self.k_radial = None
@@ -22,8 +23,8 @@ class FourierWeights:
 
     def _precompute_frequencies(self):
         # Compute frequencies in Fourier space (kx, ky)
-        kx = np.fft.fftfreq(self.res, d=1.0)
-        ky = np.fft.fftfreq(self.res, d=1.0)
+        kx = np.fft.fftfreq(self.res)
+        ky = np.fft.fftfreq(self.res)
         KX, KY = np.meshgrid(kx, ky)
         self.k_radial = np.sqrt(KX**2 + KY**2)
 
@@ -32,11 +33,13 @@ class FourierWeights:
     def _precompute_disk(self):
         # Compute the Fourier transform of the disk indicator function
         # using the bessel functions of the first order
-        self.disk_fft = (np.sqrt(3 * self.h) / (4 * self.k_radial)) * j1(2 * np.pi * self.h * self.k_radial)
+        self.disk_fft = (np.sqrt(3 * self.inner_rad) / (4 * self.k_radial)) * j1(2 * np.pi * self.inner_rad * self.k_radial)
+        self.disk_fft = self.apply_gaussian_filter(self.disk_fft)
 
     def _precompute_annulus(self):
         # Compute the Fourier transform for the annulus (difference between disks)
-        disk_3h_fft = (np.sqrt(9 * self.h) / (4 * self.k_radial)) * j1(6 * np.pi * self.h * self.k_radial)
+        disk_3h_fft = (np.sqrt(3 * self.outer_rad) / (4 * self.k_radial)) * j1(2 * np.pi * self.outer_rad * self.k_radial)
+        disk_3h_fft = self.apply_gaussian_filter(disk_3h_fft)
         self.annulus_fft = disk_3h_fft - self.disk_fft
 
     def compute_M(self, f_fft):
@@ -44,7 +47,7 @@ class FourierWeights:
         M_fft = f_fft * self.disk_fft
         # M_fft = self.apply_gaussian_filter(M_fft)
         # Compute the inverse Fourier transform to get M(x, y) in real space
-        M = (1 / (2 * np.pi * self.h ** 2)) * ifft2(M_fft).real
+        M = 1 / (2 * np.pi * np.sqrt(self.inner_rad)) * np.real(ifft2(M_fft))
         return M
     
     def compute_N(self, f_fft):
@@ -52,10 +55,10 @@ class FourierWeights:
         N_fft = f_fft * self.annulus_fft
         # N_fft = self.apply_gaussian_filter(N_fft)
         # Compute the inverse Fourier transform to get N(x, y) in real space
-        N = (1 / (8 * np.pi * self.h ** 2)) * ifft2(N_fft).real
+        N = 1 / (8 * np.pi * np.sqrt(self.inner_rad)) * np.real(ifft2(N_fft))
         return N
 
-    def apply_gaussian_filter(self, field_fft, cutoff=0.66):
+    def apply_gaussian_filter(self, field_fft, cutoff=0.066):
         kx = np.fft.fftfreq(self.res, d=1.0)
         ky = np.fft.fftfreq(self.res, d=1.0)
         KX, KY = np.meshgrid(kx, ky)
@@ -124,12 +127,11 @@ class Rules:
 
 class SmoothLife:
     def __init__(self):
-        self.weights = FourierWeights(1 << 8)
+        self.weights = FourierWeights(1 << 9)
         self.rules = Rules()
 
         self.field = np.zeros((self.weights.res, self.weights.res))
-        self.initialize_field(self.weights.res, self.weights.h)
-        self.field_fft = fft2(self.field)
+        self.initialize_field(self.weights.res, self.weights.inner_rad)
 
     def initialize_field(self, res, h):
         """Populate field with random living squares
@@ -144,16 +146,16 @@ class SmoothLife:
             self.field[r : r + radius, c : c + radius] = 1
         
     def step(self):
-        M_buffer = self.weights.compute_M(self.field_fft)
-        N_buffer = self.weights.compute_N(self.field_fft)
+        field_fft = fft2(self.field)
+        M_buffer = self.weights.compute_M(field_fft)
+        N_buffer = self.weights.compute_N(field_fft)
         self.field = self.rules.S(M_buffer, N_buffer)
-        self.field_fft = fft2(self.field)
         return self.field
 
 
 def show_animation():
     sl = SmoothLife()
-    sl.step()
+    # sl.step()
 
     fig = plt.figure()
     # Nice color maps: viridis, plasma, gray, binary, seismic, gnuplot
