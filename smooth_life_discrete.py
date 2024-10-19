@@ -1,4 +1,3 @@
-import math
 import numpy as np
 from scipy.special import j1
 from scipy.fft import fft2, ifft2
@@ -43,18 +42,20 @@ class FourierWeights:
     def compute_M(self, f_fft):
         # Multiply Fourier transform of f(x, y) by the Fourier transform of the disk
         M_fft = f_fft * self.disk_fft
+        # M_fft = self.apply_gaussian_filter(M_fft)
         # Compute the inverse Fourier transform to get M(x, y) in real space
-        M = ifft2(M_fft).real
+        M = (1 / (2 * np.pi * self.h ** 2)) * ifft2(M_fft).real
         return M
     
     def compute_N(self, f_fft):
         # Multiply Fourier transform of f(x, y) by the Fourier transform of the annulus
         N_fft = f_fft * self.annulus_fft
+        # N_fft = self.apply_gaussian_filter(N_fft)
         # Compute the inverse Fourier transform to get N(x, y) in real space
-        N = ifft2(N_fft).real
+        N = (1 / (8 * np.pi * self.h ** 2)) * ifft2(N_fft).real
         return N
 
-    def apply_gaussian_filter(field_fft, cutoff=0.66):
+    def apply_gaussian_filter(self, field_fft, cutoff=0.66):
         kx = np.fft.fftfreq(self.res, d=1.0)
         ky = np.fft.fftfreq(self.res, d=1.0)
         KX, KY = np.meshgrid(kx, ky)
@@ -128,7 +129,7 @@ class SmoothLife:
 
         self.field = np.zeros((self.weights.res, self.weights.res))
         self.initialize_field(self.weights.res, self.weights.h)
-        self.field_fft = np.fft.fft2(self.field)
+        self.field_fft = fft2(self.field)
 
     def initialize_field(self, res, h):
         """Populate field with random living squares
@@ -143,11 +144,10 @@ class SmoothLife:
             self.field[r : r + radius, c : c + radius] = 1
         
     def step(self):
-        M_buffer_ = self.field_fft * self.weights.disk_fft
-        N_buffer_ = self.field_fft * self.weights.annulus_fft
-        M_buffer = np.real(np.fft.ifft2(M_buffer_))
-        N_buffer = np.real(np.fft.ifft2(N_buffer_))
+        M_buffer = self.weights.compute_M(self.field_fft)
+        N_buffer = self.weights.compute_N(self.field_fft)
         self.field = self.rules.S(M_buffer, N_buffer)
+        self.field_fft = fft2(self.field)
         return self.field
 
 
