@@ -130,20 +130,34 @@ class SmoothLife:
         self.weights = FourierWeights(1 << 9)
         self.rules = Rules()
 
-        self.field = np.zeros((self.weights.res, self.weights.res))
-        self.initialize_field(self.weights.res, self.weights.inner_rad)
+        self.field = self.initialize_field(self.weights.res, self.weights.outer_rad)
 
-    def initialize_field(self, res, h):
-        """Populate field with random living squares
+    def initialize_field(self, R, h):
+        # Create an empty field
+        field = np.zeros((R, R))
 
-        If count unspecified, do a moderately dense fill
-        """
-        count = int(res**2 / ((h * 3 * 2) ** 2))
-        for _ in range(count):
-            radius = int(3 * h)
-            r = np.random.randint(0, res - radius)
-            c = np.random.randint(0, res - radius)
-            self.field[r : r + radius, c : c + radius] = 1
+        # Generate random centers and radii
+        x_centers = np.random.randint(0, R, 130)
+        y_centers = np.random.randint(0, R, 130)
+        radii = np.random.uniform(h // 3, h, 130)
+
+        # Create the 2D grid
+        x = np.linspace(0, R-1, R)
+        y = np.linspace(0, R-1, R)
+        X, Y = np.meshgrid(x, y)
+
+        # Add circles to the field
+        for i in range(130):
+            center_x = x_centers[i]
+            center_y = y_centers[i]
+            radius = radii[i]
+            # Compute the distance from the center of the circle to each grid point
+            distance_from_center = np.sqrt((X - center_x)**2 + (Y - center_y)**2)
+            # Set the value to 1 for points within the radius of the circle
+            field[distance_from_center <= radius] = 1
+
+        return field
+        
         
     def step(self):
         field_fft = fft2(self.field)
@@ -153,25 +167,20 @@ class SmoothLife:
         return self.field
 
 
-def show_animation():
-    sl = SmoothLife()
-    # sl.step()
+def main():
+    app = SmoothLife()
 
     fig = plt.figure()
-    # Nice color maps: viridis, plasma, gray, binary, seismic, gnuplot
     im = plt.imshow(
-        sl.field, animated=True, cmap=plt.get_cmap("viridis"), aspect="equal"
+        app.field, animated=True, aspect="equal"
     )
 
     def animate(*args):
-        im.set_array(sl.step())
+        im.set_array(app.step())
         return (im,)
 
-    ani = animation.FuncAnimation(fig, animate, interval=60, blit=True)
+    _ = animation.FuncAnimation(fig, animate, interval=60, blit=True)
     plt.show()
-
-def main():
-    show_animation()
 
 if __name__ == "__main__":
     main()
