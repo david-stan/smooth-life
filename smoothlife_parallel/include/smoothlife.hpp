@@ -10,17 +10,9 @@ public:
     SmoothLife(int grid_size, double radius);
     ~SmoothLife();
     
-    void printField();
     void update();
     void updateFieldCUDA();
-
-    void initializeWeightsDisk();
-    void initializeWeightsAnnulus();
-
-    double logistic_threshold(double x, double x0, double alpha);
-    double logistic_interval(double x, double a, double b, double alpha);
-    double lerp(double a, double b, double t);
-    void S(fftw_complex* M, fftw_complex* N, fftw_complex* output);
+    void visualize2DVector(fftw_complex* vector, int grid_size);
 
     static double B0;
     static double B1;
@@ -48,6 +40,15 @@ private:
     fftw_plan plan_fft2_field;
     fftw_plan plan_ifft2_M;
     fftw_plan plan_ifft2_N;
+
+    void initializeWeightsDisk();
+    void initializeWeightsAnnulus();
+
+    double logistic_threshold(double x, double x0, double alpha);
+    double logistic_interval(double x, double a, double b, double alpha);
+    double lerp(double a, double b, double t);
+    void S(fftw_complex* M, fftw_complex* N, fftw_complex* output);
+    void complex_vector_multiplication(fftw_complex* signal, fftw_complex* filter, fftw_complex* result);
 
     // CUDA-accelerated functions
     void applyCudaUpdates();

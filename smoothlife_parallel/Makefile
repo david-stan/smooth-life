@@ -4,7 +4,7 @@ NVCC = nvcc                # CUDA compiler
 
 CXXFLAGS = -std=c++17 -O3 -Wall -g -I/usr/include -Iinclude  # C++ flags, include headers from include/
 NVCCFLAGS = -Iinclude -O3          # CUDA flags
-LDFLAGS = -L/usr/local/lib -lgsl -lfftw3 -lcufft -lcudart
+LDFLAGS = -L/usr/local/lib -lgsl -lfftw3 -lcufft -lcudart -lsfml-graphics -lsfml-window -lsfml-system
   # Linker flags, link with FFTW and CUDA libraries
 
 # Target executable

@@ -3,6 +3,7 @@
 #include <iostream>
 #include <fftw3.h>
 #include <algorithm>
+#include <SFML/Graphics.hpp>
 
 double SmoothLife::B0 = 0.278;
 double SmoothLife::B1 = 0.365;
@@ -66,9 +67,7 @@ double SmoothLife::logistic_threshold(double x, double x0, double alpha) {
 
 // Logistic interval function σ2
 double SmoothLife::logistic_interval(double x, double a, double b, double alpha) {
-    double t1 = logistic_threshold(x, a, alpha);
-    double t2 = logistic_threshold(x, b, alpha);
-    return t1 * (1.0 - t2);
+    return logistic_threshold(x, a, alpha) * (1.0 - logistic_threshold(x, b, alpha));
 }
 
 // Linear interpolation function
@@ -77,25 +76,33 @@ double SmoothLife::lerp(double a, double b, double t) {
 }
 
 void SmoothLife::S(fftw_complex* M, fftw_complex* N, fftw_complex* output) {
+    fftw_complex* kurac = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * grid_size * grid_size);
+    fftw_complex* kurac1 = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * grid_size * grid_size);
     for (int i = 0; i < grid_size * grid_size; ++i) {
         // Extract the real parts of M and N
         double M_real = (1.0 / (2 * M_PI * std::sqrt(inner_radius))) * M[i][0];  // Real part of M
-        double N_real = (1.0 / (8 * M_PI * std::sqrt(outer_radius))) * N[i][0];  // Real part of N
-
+        double N_real = (1.0 / (8 * M_PI * std::sqrt(inner_radius))) * N[i][0];  // Real part of N
+        kurac[i][0] = M_real;
+        kurac1[i][0] = N_real;
+        std::cout << M[i][0] << " ";
         // Compute aliveness using logistic_threshold on M
-        double aliveness = logistic_threshold(M_real, 0.5, alpha_M);
-
+        double aliveness = logistic_threshold(M[i][0], 0.5, alpha_M);
+        // std::cout << aliveness;
+        // std::cout << aliveness << std::endl;
         // Interpolate between birth and death thresholds based on aliveness
         double threshold1 = lerp(B0, D0, aliveness);
         double threshold2 = lerp(B1, D1, aliveness);
+        // std::cout << threshold1 << " -- " << threshold2 << std::endl;
 
         // Compute new aliveness using logistic_interval on N
-        double new_aliveness = logistic_interval(N_real, threshold1, threshold2, alpha_N);
-
+        double new_aliveness = logistic_interval(N[i][0], threshold1, threshold2, alpha_N);
+        // std::cout << new_aliveness << std::endl;
         // Clamp the result between 0 and 1 and store it in the real part of the output
         output[i][0] = std::clamp(new_aliveness, 0.0, 1.0);  // Only modify the real part
         output[i][1] = 0.0;  // Set the imaginary part to 0
     }
+    visualize2DVector(kurac, grid_size);
+    visualize2DVector(kurac1, grid_size);
 }
 
 void SmoothLife::initializeWeightsDisk() {
@@ -112,10 +119,10 @@ void SmoothLife::initializeWeightsDisk() {
 
             // Avoid division by zero at the origin (low frequency components)
             if (rho == 0.0) {
-                disk_weights[i][j] = M_PI * inner_radius * inner_radius;  // Area of the disk for the zero frequency
+                disk_weights[i * grid_size + j][0] = M_PI * inner_radius * inner_radius;  // Area of the disk for the zero frequency
             } else {
                 // Compute the Fourier transform (Bessel function J1)
-                disk_weights[i][j] = std::sqrt(3 * inner_radius) / (4 * rho) * gsl_sf_bessel_J1(2 * M_PI * inner_radius * rho);
+                disk_weights[i * grid_size + j][0] = (std::sqrt(3 * inner_radius) / (4 * rho)) * gsl_sf_bessel_J1(2 * M_PI * inner_radius * rho);
             }
         }
     }
@@ -135,12 +142,26 @@ void SmoothLife::initializeWeightsAnnulus() {
 
             // Avoid division by zero at the origin (low frequency components)
             if (rho == 0.0) {
-                annulus_weights[i][j] = M_PI * outer_radius * outer_radius - disk_weights[0][0];  // Area of the disk for the zero frequency
+                annulus_weights[i * grid_size + j][0] = M_PI * outer_radius * outer_radius - disk_weights[0][0];  // Area of the disk for the zero frequency
             } else {
                 // Compute the Fourier transform (Bessel function J1)
-                annulus_weights[i][j] = std::sqrt(3 * outer_radius) / (4 * rho) * gsl_sf_bessel_J1(2 * M_PI * outer_radius * rho) - disk_weights[i][j];
+                annulus_weights[i * grid_size + j][0] = std::sqrt(3 * outer_radius) / (4 * rho) * gsl_sf_bessel_J1(2 * M_PI * outer_radius * rho) - disk_weights[i * grid_size + j][0];
             }
         }
+    }
+}
+
+void SmoothLife::complex_vector_multiplication(fftw_complex* signal, fftw_complex* filter, fftw_complex* result) {
+    for (int i = 0; i < grid_size * grid_size; ++i) {
+        double signal_real = signal[i][0];
+        double signal_imag = signal[i][1];
+
+        double filter_real = filter[i][0];
+        double filter_imag = filter[i][1];
+
+        // Perform complex multiplication
+        result[i][0] = signal_real * filter_real - signal_imag * filter_imag;  // Real part of result
+        result[i][1] = signal_real * filter_imag + signal_imag * filter_real;  // Imaginary part of result
     }
 }
 
@@ -149,27 +170,29 @@ void SmoothLife::update() {
     fftw_execute(plan_fft2_field);
 
     // M_f
-    for (int i = 0; i < grid_size; i++) {
-        for (int j = 0; j < grid_size; j++) {
-            // Multiply Fourier transforms: f_fourier * disk_fourier_weights
-            M_fourier[i * grid_size + j][0] = output_weights[i * grid_size + j][0] * disk_weights[i][j];
-            M_fourier[i * grid_size + j][1] = output_weights[i * grid_size + j][1] * disk_weights[i][j];
-        }
-    }
-
+    complex_vector_multiplication(output_weights, disk_weights, M_fourier);
+    
     // N_f
-    for (int i = 0; i < grid_size; i++) {
-        for (int j = 0; j < grid_size; j++) {
-            // Multiply Fourier transforms: f_fourier * annulus_fourier_weights
-            N_fourier[i * grid_size + j][0] = output_weights[i * grid_size + j][0] * annulus_weights[i][j];
-            N_fourier[i * grid_size + j][1] = output_weights[i * grid_size + j][1] * annulus_weights[i][j];
-        }
-    }
+    complex_vector_multiplication(output_weights, annulus_weights, N_fourier);
 
     fftw_execute(plan_ifft2_M);
     fftw_execute(plan_ifft2_N);
+
+    for (int i = 0; i < grid_size * grid_size; i++) {
+        M_spatial[i][0] /= (grid_size * grid_size);  // Normalize real part
+        M_spatial[i][1] /= (grid_size * grid_size);  // Normalize imaginary part
+
+        N_spatial[i][0] /= (grid_size * grid_size);
+        N_spatial[i][1] /= (grid_size * grid_size);
+    }
+    visualize2DVector(M_spatial, grid_size);
     
     S(M_spatial, N_spatial, input_weights);
+
+    
+    // visualize2DVector(N_spatial, grid_size);
+
+    visualize2DVector(input_weights, grid_size);
 
     for (int i = 0; i < grid_size; i++) {
         for (int j = 0; j < grid_size; j++) {
@@ -184,11 +207,37 @@ void SmoothLife::updateFieldCUDA() {
     applyCudaUpdates();
 }
 
-void SmoothLife::printField() {
+void SmoothLife::visualize2DVector(fftw_complex* vec, int grid_size) {
+    sf::RenderWindow window(sf::VideoMode(grid_size, grid_size), "2D Vector Visualization");
+
+    // Create an image to display the 2D vector
+    sf::Image image;
+    image.create(grid_size, grid_size, sf::Color::Black);
+
+    // Set pixels in the image based on the 2D vector values
     for (int i = 0; i < grid_size; ++i) {
         for (int j = 0; j < grid_size; ++j) {
-            std::cout << field[i][j];
+            // Normalize the value to a grayscale range [0, 255]
+            sf::Uint8 color = static_cast<sf::Uint8>(vec[i * grid_size + j][0] * 255.0);
+            image.setPixel(j, i, sf::Color(color, color, color));
         }
-        std::cout << std::endl;
+    }
+
+    // Load the image into a texture and then into a sprite for rendering
+    sf::Texture texture;
+    texture.loadFromImage(image);
+    sf::Sprite sprite(texture);
+
+    // Main window loop
+    while (window.isOpen()) {
+        sf::Event event;
+        while (window.pollEvent(event)) {
+            if (event.type == sf::Event::Closed)
+                window.close();
+        }
+
+        window.clear();
+        window.draw(sprite);
+        window.display();
     }
 }
