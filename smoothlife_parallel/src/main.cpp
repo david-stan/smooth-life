@@ -2,13 +2,14 @@
 #include <iostream>
 
 int main() {
-    int grid_size = 256;
-    double radius = 5.0;
+    int grid_size = 64;
+    double radius = 1.0;
 
     SmoothLife smoothlife(grid_size, radius);
     
     smoothlife.initializeField();
-    smoothlife.updateField();
+    // smoothlife.updateField();
+    smoothlife.printField();
     
     std::cout << "Field updated!" << std::endl;
     

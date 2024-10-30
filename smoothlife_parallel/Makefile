@@ -1,36 +1,46 @@
 # Compiler and flags
-CXX = g++
-NVCC = nvcc
-CXXFLAGS = -std=c++11 -O3 -Iinclude
-LDFLAGS = -Llib -lfftw3 -lcufft -lcudart
+CXX = g++                  # C++ compiler
+NVCC = nvcc                # CUDA compiler
 
-# FFTW and CUDA libraries
-LIBS = -lfftw3 -lcufft -lcudart
+CXXFLAGS = -std=c++11 -O3 -I/usr/include -Iinclude  # C++ flags, include headers from include/
+NVCCFLAGS = -Iinclude -O3          # CUDA flags
+LDFLAGS = -L/usr/local/lib -lfftw3 -lcufft -lcudart
+  # Linker flags, link with FFTW and CUDA libraries
 
 # Target executable
-TARGET = smoothlife
+TARGET = smoothlife              # Final executable name
 
 # Source files
-SRC_CXX = src/main.cpp src/smoothlife.cpp src/utils.cpp
-SRC_CUDA = src/smoothlife_cuda.cu
-OBJS = $(SRC_CXX:.cpp=.o) $(SRC_CUDA:.cu=.o)
+SRC_CXX = src/main.cpp src/smoothlife.cpp src/utils.cpp  														 # C++ source files
+SRC_CUDA = cuda/smoothlife_cuda.cu                        														 # CUDA source files
+
+OBJDIR = bin
+OBJS = $(patsubst src/%.cpp,$(OBJDIR)/%.o,$(SRC_CXX)) $(patsubst cuda/%.cu,$(OBJDIR)/%.o,$(SRC_CUDA))             # Object files after compilation
 
 # Build rules
-all: $(TARGET)
+all: $(OBJDIR) $(TARGET)
 
+# Create bin directory if it doesn't exist
+$(OBJDIR):
+	mkdir -p $(OBJDIR)
+
+# Linking step for the executable
 $(TARGET): $(OBJS)
 	$(CXX) -o $(TARGET) $(OBJS) $(LDFLAGS)
 
-%.o: %.cpp
+# Compile C++ source files into bin/
+$(OBJDIR)/%.o: src/%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-%.o: %.cu
-	$(NVCC) -c $< -o $@
+# Compile CUDA source files into bin/
+$(OBJDIR)/%.o: cuda/%.cu
+	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
+# Clean build artifacts
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f $(OBJDIR)/*.o $(TARGET)
 
-# FFTW and CUDA installations
+# FFTW and CUDA installation (optional)
 fftw:
 	@echo "Installing FFTW..."
 	sudo apt-get install libfftw3-dev

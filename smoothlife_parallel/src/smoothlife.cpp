@@ -1,5 +1,5 @@
-#include "../include/smoothlife.hpp"
-#include "../include/utils.hpp"
+#include "smoothlife.hpp"
+#include "utils.hpp"
 #include <iostream>
 #include <fftw3.h>
 
@@ -8,12 +8,21 @@ SmoothLife::SmoothLife(int grid_size, double radius) : grid_size(grid_size), rad
 }
 
 void SmoothLife::initializeField() {
-    initializeRandomCircles(field, grid_size, 10, 5, 30); // Example initialization
+    initializeRandomCircles(field, grid_size, 10, radius, radius + 1.0); // Example initialization
 }
 
 void SmoothLife::updateField() {
     // Call CUDA function to update the field
     applyCudaUpdates();
+}
+
+void SmoothLife::printField() {
+    for (int i = 0; i < grid_size; ++i) {
+        for (int j = 0; j < grid_size; ++j) {
+            std::cout << field[i][j];
+        }
+        std::cout << std::endl;
+    }
 }
 
 void SmoothLife::computeFFT() {

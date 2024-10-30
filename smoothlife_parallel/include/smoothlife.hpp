@@ -7,6 +7,7 @@ class SmoothLife {
 public:
     SmoothLife(int grid_size, double radius);
     void initializeField();
+    void printField();
     void updateField();
     void computeFFT();
     
