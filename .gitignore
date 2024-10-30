@@ -1,0 +1,10 @@
+*.ipynb
+*.mp4
+.vscode
+test.py
+/smoothlife_parallel/fftw-3.3.10/
+/smoothlife_parallel/lib/
+/smoothlife_parallel/fftw-3.3.10.tar.gz
+/smoothlife_parallel/bin/
+libs_setup.sh
+smoothlife
