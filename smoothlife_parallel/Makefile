@@ -2,9 +2,9 @@
 CXX = g++                  # C++ compiler
 NVCC = nvcc                # CUDA compiler
 
-CXXFLAGS = -std=c++11 -O3 -I/usr/include -Iinclude  # C++ flags, include headers from include/
+CXXFLAGS = -std=c++17 -O3 -Wall -g -I/usr/include -Iinclude  # C++ flags, include headers from include/
 NVCCFLAGS = -Iinclude -O3          # CUDA flags
-LDFLAGS = -L/usr/local/lib -lfftw3 -lcufft -lcudart
+LDFLAGS = -L/usr/local/lib -lgsl -lfftw3 -lcufft -lcudart
   # Linker flags, link with FFTW and CUDA libraries
 
 # Target executable
@@ -48,3 +48,7 @@ fftw:
 cuda:
 	@echo "Installing CUDA..."
 	sudo apt-get install nvidia-cuda-toolkit
+
+gsl:
+	@echo "Installing GSL..."
+	sudo apt-get install libgsl-dev
