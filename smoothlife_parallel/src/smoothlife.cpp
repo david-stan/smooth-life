@@ -26,6 +26,7 @@ SmoothLife::SmoothLife(int grid_size, double radius) : grid_size(grid_size), inn
     }
     output_weights = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * grid_size * grid_size);
 
+    gaussian_filter = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * grid_size * grid_size);
     disk_weights = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * grid_size * grid_size);
     annulus_weights = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * grid_size * grid_size);
 
@@ -39,6 +40,7 @@ SmoothLife::SmoothLife(int grid_size, double radius) : grid_size(grid_size), inn
     plan_ifft2_M = fftw_plan_dft_2d(grid_size, grid_size, M_fourier, M_spatial, FFTW_BACKWARD, FFTW_ESTIMATE);
     plan_ifft2_N = fftw_plan_dft_2d(grid_size, grid_size, N_fourier, N_spatial, FFTW_BACKWARD, FFTW_ESTIMATE);
 
+    initializeGaussianFilter(0.066);
     initializeWeightsDisk();
     initializeWeightsAnnulus();
 }
@@ -51,6 +53,7 @@ SmoothLife::~SmoothLife() {
     fftw_free(input_weights);
     fftw_free(output_weights);
 
+    fftw_free(gaussian_filter);
     fftw_free(disk_weights);
     fftw_free(annulus_weights);
 
@@ -76,33 +79,38 @@ double SmoothLife::lerp(double a, double b, double t) {
 }
 
 void SmoothLife::S(fftw_complex* M, fftw_complex* N, fftw_complex* output) {
-    fftw_complex* kurac = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * grid_size * grid_size);
-    fftw_complex* kurac1 = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * grid_size * grid_size);
     for (int i = 0; i < grid_size * grid_size; ++i) {
         // Extract the real parts of M and N
-        double M_real = (1.0 / (2 * M_PI * std::sqrt(inner_radius))) * M[i][0];  // Real part of M
-        double N_real = (1.0 / (8 * M_PI * std::sqrt(inner_radius))) * N[i][0];  // Real part of N
-        kurac[i][0] = M_real;
-        kurac1[i][0] = N_real;
-        std::cout << M[i][0] << " ";
+        // double M_real = (1.0 / (2 * M_PI * inner_radius * inner_radius)) * M[i][0];  // Real part of M
+        // double N_real = (1.0 / (8 * M_PI * inner_radius * inner_radius)) * N[i][0];  // Real part of N
+
         // Compute aliveness using logistic_threshold on M
         double aliveness = logistic_threshold(M[i][0], 0.5, alpha_M);
-        // std::cout << aliveness;
-        // std::cout << aliveness << std::endl;
+
         // Interpolate between birth and death thresholds based on aliveness
         double threshold1 = lerp(B0, D0, aliveness);
         double threshold2 = lerp(B1, D1, aliveness);
-        // std::cout << threshold1 << " -- " << threshold2 << std::endl;
 
         // Compute new aliveness using logistic_interval on N
         double new_aliveness = logistic_interval(N[i][0], threshold1, threshold2, alpha_N);
-        // std::cout << new_aliveness << std::endl;
+
         // Clamp the result between 0 and 1 and store it in the real part of the output
         output[i][0] = std::clamp(new_aliveness, 0.0, 1.0);  // Only modify the real part
         output[i][1] = 0.0;  // Set the imaginary part to 0
     }
-    visualize2DVector(kurac, grid_size);
-    visualize2DVector(kurac1, grid_size);
+}
+
+void SmoothLife::initializeGaussianFilter(double cutoff) {
+    // Iterate over all frequency components in Fourier space
+    for (int kx = 0; kx < grid_size; ++kx) {
+        for (int ky = 0; ky < grid_size; ++ky) {
+            // Compute the radial frequency rho (distance to the origin in frequency space)
+            double rho = std::sqrt(kx * kx + ky * ky);
+
+            // Avoid division by zero at the origin (low frequency components)
+            gaussian_filter[kx * grid_size + ky][0] = std::exp(-(rho * rho) / (2 * cutoff * cutoff));
+        }
+    }
 }
 
 void SmoothLife::initializeWeightsDisk() {
@@ -122,10 +130,17 @@ void SmoothLife::initializeWeightsDisk() {
                 disk_weights[i * grid_size + j][0] = M_PI * inner_radius * inner_radius;  // Area of the disk for the zero frequency
             } else {
                 // Compute the Fourier transform (Bessel function J1)
-                disk_weights[i * grid_size + j][0] = (std::sqrt(3 * inner_radius) / (4 * rho)) * gsl_sf_bessel_J1(2 * M_PI * inner_radius * rho);
+                double weight = (std::sqrt(3 * inner_radius) / (4 * rho)) * gsl_sf_bessel_J1(2 * M_PI * inner_radius * rho);
+                if (weight > 0.066) {
+                    disk_weights[i * grid_size + j][0] = 0.0;
+                } else {
+                    disk_weights[i * grid_size + j][0] = weight;
+                }
+                
             }
         }
     }
+    // complex_vector_multiplication(disk_weights, gaussian_filter, disk_weights);
 }
 
 void SmoothLife::initializeWeightsAnnulus() {
@@ -149,6 +164,7 @@ void SmoothLife::initializeWeightsAnnulus() {
             }
         }
     }
+    // complex_vector_multiplication(annulus_weights, gaussian_filter, annulus_weights);
 }
 
 void SmoothLife::complex_vector_multiplication(fftw_complex* signal, fftw_complex* filter, fftw_complex* result) {
@@ -185,20 +201,48 @@ void SmoothLife::update() {
         N_spatial[i][0] /= (grid_size * grid_size);
         N_spatial[i][1] /= (grid_size * grid_size);
     }
-    visualize2DVector(M_spatial, grid_size);
+
+    normalize_fftw_complex(M_spatial, grid_size);
+    normalize_fftw_complex(N_spatial, grid_size);
+    // visualize2DVector(M_spatial, grid_size);
     
     S(M_spatial, N_spatial, input_weights);
 
     
     // visualize2DVector(N_spatial, grid_size);
 
-    visualize2DVector(input_weights, grid_size);
+    // visualize2DVector(input_weights, grid_size);
 
     for (int i = 0; i < grid_size; i++) {
         for (int j = 0; j < grid_size; j++) {
             field[i][j] = input_weights[i * grid_size + j][0];
         }
     }
+}
+
+void SmoothLife::normalize_fftw_complex(fftw_complex* data, int grid_size) {
+    double min_value = data[0][0];
+    double max_value = data[0][0];
+
+    // Find min and max in the real parts
+    for (int i = 0; i < grid_size * grid_size; ++i) {
+        min_value = std::min(min_value, data[i][0]);  // Real part only
+        max_value = std::max(max_value, data[i][0]);
+    }
+
+    // Normalize each real part to [0, 1] range
+    double range = max_value - min_value;
+    if (range > 0) {  // Avoid division by zero
+        for (int i = 0; i < grid_size * grid_size; ++i) {
+            data[i][0] = (data[i][0] - min_value) / range;  // Normalize real part
+        }
+    } else {
+        std::cerr << "Warning: No range in data, all values are the same.\n";
+    }
+}
+
+fftw_complex* SmoothLife::getBuffer() {
+    return input_weights;
 }
 
 
