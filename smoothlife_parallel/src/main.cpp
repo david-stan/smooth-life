@@ -4,7 +4,7 @@
 
 int main() {
     int grid_size = 512;
-    double radius = 4.4;
+    double radius = 7;
 
     SmoothLife smoothlife(grid_size, radius);
     smoothlife.update();
@@ -51,7 +51,7 @@ int main() {
         window.display();
 
         // Control frame rate (e.g., 60 frames per second)
-        sf::sleep(sf::milliseconds(16));
+        sf::sleep(sf::milliseconds(40));
     }
     
     return 0;
