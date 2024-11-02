@@ -13,7 +13,6 @@ public:
     fftw_complex* getBuffer();
     
     void update();
-    void updateFieldCUDA();
     void visualize2DVector(fftw_complex* vector, int grid_size);
 
     static double B0;
@@ -57,8 +56,7 @@ private:
     void normalize_fftw_complex(fftw_complex* data, int grid_size);
 
     // CUDA-accelerated functions
-    void applyCudaUpdates();
-    void applyCudaFFT();
+    void applyCudaUpdate();
 };
 
 #endif // SMOOTHLIFE_HPP

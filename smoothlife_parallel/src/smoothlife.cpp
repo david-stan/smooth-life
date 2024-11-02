@@ -204,14 +204,8 @@ void SmoothLife::update() {
 
     normalize_fftw_complex(M_spatial, grid_size);
     normalize_fftw_complex(N_spatial, grid_size);
-    // visualize2DVector(M_spatial, grid_size);
     
     S(M_spatial, N_spatial, input_weights);
-
-    
-    // visualize2DVector(N_spatial, grid_size);
-
-    // visualize2DVector(input_weights, grid_size);
 
     for (int i = 0; i < grid_size; i++) {
         for (int j = 0; j < grid_size; j++) {
@@ -243,12 +237,6 @@ void SmoothLife::normalize_fftw_complex(fftw_complex* data, int grid_size) {
 
 fftw_complex* SmoothLife::getBuffer() {
     return input_weights;
-}
-
-
-void SmoothLife::updateFieldCUDA() {
-    // Call CUDA function to update the field
-    applyCudaUpdates();
 }
 
 void SmoothLife::visualize2DVector(fftw_complex* vec, int grid_size) {
