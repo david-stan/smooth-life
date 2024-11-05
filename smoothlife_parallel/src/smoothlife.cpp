@@ -17,11 +17,13 @@ SmoothLife::SmoothLife(int grid_size, double radius) : grid_size(grid_size), inn
     field.resize(grid_size, std::vector<double>(grid_size, 0.0));
     initializeRandomCircles(field, grid_size, 30, radius, radius * 7); // initialization
     // FFTW-based FFT computation for non-CUDA
+    input_weights_real = (double*) malloc(sizeof(double) * grid_size * grid_size);
     input_weights = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * grid_size * grid_size);
     for (int i = 0; i < grid_size; i++) {
         for (int j = 0; j < grid_size; j++) {
             input_weights[i * grid_size + j][0] = field[i][j]; // Real
             input_weights[i * grid_size + j][1] = 0.0; // Imaginary part
+            input_weights_real[i * grid_size + j] = field[i][j];
         }
     }
     output_weights = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * grid_size * grid_size);
@@ -41,8 +43,16 @@ SmoothLife::SmoothLife(int grid_size, double radius) : grid_size(grid_size), inn
     plan_ifft2_N = fftw_plan_dft_2d(grid_size, grid_size, N_fourier, N_spatial, FFTW_BACKWARD, FFTW_ESTIMATE);
 
     initializeGaussianFilter(0.066);
-    initializeWeightsDisk();
-    initializeWeightsAnnulus();
+    initializeWeightsDisk(grid_size, disk_weights);
+    initializeWeightsAnnulus(grid_size, annulus_weights, disk_weights);
+    // execute fft
+    fftw_execute(plan_fft2_field);
+
+    size_t cuda_filter_size = (BLOCK_SIZE + 2 * HALO) * (BLOCK_SIZE + 2 * HALO);
+    disk_weights_cuda = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * cuda_filter_size);
+    annulus_weights_cuda = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * cuda_filter_size);
+    initializeWeightsDisk((BLOCK_SIZE + 2 * HALO), disk_weights_cuda);
+    initializeWeightsAnnulus((BLOCK_SIZE + 2 * HALO), annulus_weights_cuda, disk_weights_cuda);
 }
 
 SmoothLife::~SmoothLife() {
@@ -113,28 +123,28 @@ void SmoothLife::initializeGaussianFilter(double cutoff) {
     }
 }
 
-void SmoothLife::initializeWeightsDisk() {
-    int half_size = grid_size / 2;
-    double grid_spacing = 1.0 / grid_size;
+void SmoothLife::initializeWeightsDisk(size_t filter_size, fftw_complex* buffer) {
+    size_t half_size = filter_size / 2;
+    double grid_spacing = 1.0 / filter_size;
 
     // Iterate over all frequency components in Fourier space
-    for (int i = 0; i < grid_size; ++i) {
-        for (int j = 0; j < grid_size; ++j) {
+    for (size_t i = 0; i < filter_size; ++i) {
+        for (size_t j = 0; j < filter_size; ++j) {
             // Compute the radial frequency rho (distance to the origin in frequency space)
-            int kx = (i < half_size) ? i : i - grid_size;  // Handle periodicity
-            int ky = (j < half_size) ? j : j - grid_size;
+            int kx = (i < half_size) ? i : i - filter_size;  // Handle periodicity
+            int ky = (j < half_size) ? j : j - filter_size;
             double rho = std::sqrt(kx * kx + ky * ky) * grid_spacing;
 
             // Avoid division by zero at the origin (low frequency components)
             if (rho == 0.0) {
-                disk_weights[i * grid_size + j][0] = M_PI * inner_radius * inner_radius;  // Area of the disk for the zero frequency
+                buffer[i * filter_size + j][0] = M_PI * inner_radius * inner_radius;  // Area of the disk for the zero frequency
             } else {
                 // Compute the Fourier transform (Bessel function J1)
                 double weight = (std::sqrt(3 * inner_radius) / (4 * rho)) * gsl_sf_bessel_J1(2 * M_PI * inner_radius * rho);
                 if (weight > 0.066) {
-                    disk_weights[i * grid_size + j][0] = 0.0;
+                    buffer[i * filter_size + j][0] = 0.0;
                 } else {
-                    disk_weights[i * grid_size + j][0] = weight;
+                    buffer[i * filter_size + j][0] = weight;
                 }
                 
             }
@@ -143,24 +153,24 @@ void SmoothLife::initializeWeightsDisk() {
     // complex_vector_multiplication(disk_weights, gaussian_filter, disk_weights);
 }
 
-void SmoothLife::initializeWeightsAnnulus() {
-    int half_size = grid_size / 2;
-    double grid_spacing = 1.0 / grid_size;
+void SmoothLife::initializeWeightsAnnulus(size_t filter_size, fftw_complex* buffer, const fftw_complex* disk_buffer) {
+    size_t half_size = filter_size / 2;
+    double grid_spacing = 1.0 / filter_size;
 
     // Iterate over all frequency components in Fourier space
-    for (int i = 0; i < grid_size; ++i) {
-        for (int j = 0; j < grid_size; ++j) {
+    for (size_t i = 0; i < filter_size; ++i) {
+        for (size_t j = 0; j < filter_size; ++j) {
             // Compute the radial frequency rho (distance to the origin in frequency space)
-            int kx = (i < half_size) ? i : i - grid_size;  // Handle periodicity
-            int ky = (j < half_size) ? j : j - grid_size;
+            int kx = (i < half_size) ? i : i - filter_size;  // Handle periodicity
+            int ky = (j < half_size) ? j : j - filter_size;
             double rho = std::sqrt(kx * kx + ky * ky) * grid_spacing;
 
             // Avoid division by zero at the origin (low frequency components)
             if (rho == 0.0) {
-                annulus_weights[i * grid_size + j][0] = M_PI * outer_radius * outer_radius - disk_weights[0][0];  // Area of the disk for the zero frequency
+                buffer[i * filter_size + j][0] = M_PI * outer_radius * outer_radius - disk_buffer[0][0];  // Area of the disk for the zero frequency
             } else {
                 // Compute the Fourier transform (Bessel function J1)
-                annulus_weights[i * grid_size + j][0] = std::sqrt(3 * outer_radius) / (4 * rho) * gsl_sf_bessel_J1(2 * M_PI * outer_radius * rho) - disk_weights[i * grid_size + j][0];
+                buffer[i * filter_size + j][0] = std::sqrt(3 * outer_radius) / (4 * rho) * gsl_sf_bessel_J1(2 * M_PI * outer_radius * rho) - disk_buffer[i * filter_size + j][0];
             }
         }
     }
@@ -182,9 +192,6 @@ void SmoothLife::complex_vector_multiplication(fftw_complex* signal, fftw_comple
 }
 
 void SmoothLife::update() {
-    // execute fft
-    fftw_execute(plan_fft2_field);
-
     // M_f
     complex_vector_multiplication(output_weights, disk_weights, M_fourier);
     
@@ -212,6 +219,8 @@ void SmoothLife::update() {
             field[i][j] = input_weights[i * grid_size + j][0];
         }
     }
+    // execute fft
+    fftw_execute(plan_fft2_field);
 }
 
 void SmoothLife::normalize_fftw_complex(fftw_complex* data, int grid_size) {

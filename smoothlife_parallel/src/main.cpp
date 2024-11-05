@@ -4,10 +4,11 @@
 
 int main() {
     int grid_size = 512;
-    double radius = 7;
+    double radius = 5;
 
     SmoothLife smoothlife(grid_size, radius);
-    smoothlife.update();
+    // smoothlife.update();
+    smoothlife.applyCudaUpdate();
 
     // Create an SFML window
     sf::RenderWindow window(sf::VideoMode(grid_size, grid_size), "SFML Animation");
