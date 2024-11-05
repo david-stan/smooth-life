@@ -49,7 +49,8 @@ void SmoothLife::applyCudaUpdate() {
     cufftPlan2d(&plan, grid_size, grid_size, CUFFT_D2Z);
     cufftExecD2Z(plan, d_field_real, d_field_fft);
 
-    std::cout << "ejoo123456" << std::endl;
+    cufftDoubleComplex* aaaa = new cufftDoubleComplex[num_coeffs];
+    cudaMemcpy(aaaa, d_field_fft, sizeof(cufftDoubleReal) * num_coeffs, cudaMemcpyHostToDevice);
 
     cufftDoubleComplex* h_disk_coeffs = new cufftDoubleComplex[num_coeffs_filter];
     cufftDoubleComplex* h_annulus_coeffs = new cufftDoubleComplex[num_coeffs_filter];
@@ -73,8 +74,6 @@ void SmoothLife::applyCudaUpdate() {
     delete[] h_disk_coeffs;
     delete[] h_annulus_coeffs;
 
-    std::cout << "Izdrzao" << std::endl;
-
     int reduced_grid_size = grid_size / 2 + 1; // hermitian
     
     dim3 threadsPerBlock(BLOCK_SIZE, BLOCK_SIZE);
@@ -88,17 +87,12 @@ void SmoothLife::applyCudaUpdate() {
     size_t width = reduced_grid_size;
 
     smooth_life_kernel<<<numBlocks, threadsPerBlock>>>(d_field_fft, d_disk_coeffs, d_annulus_coeffs, d_field_fft_M, d_field_fft_N, height, width);
-
-    std::cout << "Jjss" << std::endl;
     
     cufftDoubleComplex* h_field_fft_M = new cufftDoubleComplex[num_coeffs];
     cufftDoubleComplex* h_field_fft_N = new cufftDoubleComplex[num_coeffs];
     cudaMemcpy(h_field_fft_M, d_field_fft_M, sizeof(cufftDoubleComplex) * num_coeffs, cudaMemcpyDeviceToHost);
     cudaMemcpy(h_field_fft_N, d_field_fft_N, sizeof(cufftDoubleComplex) * num_coeffs, cudaMemcpyDeviceToHost);
-    for (size_t i = 0; i < num_coeffs; i++) {
-        std::cout << h_field_fft_M[i].x;
-        std::cout << h_field_fft_N[i].x;
-    }
+    
     // cudaMemcpy(&field[0][0], d_field, sizeof(double) * grid_size * grid_size, cudaMemcpyDeviceToHost);
     // cudaFree(d_field);
 }
